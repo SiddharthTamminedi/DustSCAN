@@ -3,10 +3,10 @@ DustSCAN U-Net Semantic Segmentation Pipeline (Optimized for 2022 Dataset)
 
 Optimizations Included:
 - Custom integration of ACTUAL 2022 dataset variables (dust_rgb, sun_zenith, pdi)
-- Day/Night Filtering: Excludes nighttime frames (sun_zenith >= 85°) where dust_rgb is invalid
+
 - ImageNet Normalization for dust_rgb (pretrained encoder compatibility)
 - Z-Score Normalization for auxiliary channels (sun_zenith, pdi)
-- Cloud-Mask-Aware Loss & Metrics: Properly handles 3-valued mask {-1, 0, 1}
+
 - Random Cropping & Data Augmentation (Flips, 90° Rotations)
 - UnetPlusPlus Architecture with efficientnet-b3 backbone (5 Input Channels)
 - Cloud-Masked Focal + Dice Loss
