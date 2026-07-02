@@ -265,6 +265,73 @@ class FocalDiceLoss(nn.Module):
 
 # No evaluate_metrics function needed -- TP/FP/FN accumulated directly in val loop
 
+def save_full_image_prediction(model, nc_file_path, val_indices, epoch, device, save_dir="visualizations/epoch_predictions"):
+    """Loads a full image from the validation set, pads it for the UNet, predicts, and saves the plot."""
+    os.makedirs(save_dir, exist_ok=True)
+    if not val_indices:
+        return
+    time_idx = val_indices[0] # Just take the first validation image
+    
+    with xr.open_dataset(nc_file_path, engine='netcdf4') as ds:
+        ds_slice = ds.isel(time=time_idx)
+        dust_rgb = ds_slice['dust_rgb'].values
+        if dust_rgb.ndim == 3 and dust_rgb.shape[-1] == 3:
+            dust_rgb = dust_rgb.transpose(2, 0, 1)
+        sun_zenith = ds_slice['sun_zenith'].values
+        pdi = ds_slice['pdi'].values
+        plume_id = ds_slice['plume_id'].values
+        
+    dust_rgb_norm = (dust_rgb.astype(np.float32) - IMAGENET_MEAN) / IMAGENET_STD
+    sun_zenith_norm = (sun_zenith - GLOBAL_STATS['sun_zenith_mean']) / (GLOBAL_STATS['sun_zenith_std'] + 1e-8)
+    pdi_norm = (pdi - GLOBAL_STATS['pdi_mean']) / (GLOBAL_STATS['pdi_std'] + 1e-8)
+    
+    X = np.concatenate([
+        dust_rgb_norm,
+        np.expand_dims(sun_zenith_norm, axis=0),
+        np.expand_dims(pdi_norm, axis=0)
+    ], axis=0).astype(np.float32)
+    
+    Y = (plume_id > 0).astype(np.float32)
+    X_tensor = torch.nan_to_num(torch.from_numpy(X)).unsqueeze(0).to(device)
+    
+    # Pad to multiple of 32
+    _, _, h, w = X_tensor.shape
+    pad_h = (32 - h % 32) % 32
+    pad_w = (32 - w % 32) % 32
+    
+    if pad_h > 0 or pad_w > 0:
+        X_tensor = F.pad(X_tensor, (0, pad_w, 0, pad_h), mode='reflect')
+        
+    model.eval()
+    with torch.no_grad():
+        with torch.autocast('cuda' if torch.cuda.is_available() else 'cpu', enabled=torch.cuda.is_available()):
+            outputs = model(X_tensor)
+            preds_bin = (torch.sigmoid(outputs) > 0.5).float()
+            
+    if pad_h > 0 or pad_w > 0:
+        preds_bin = preds_bin[:, :, :h, :w]
+        
+    pred_np = preds_bin[0, 0].cpu().numpy()
+    
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    display_rgb = np.clip(dust_rgb.transpose(1, 2, 0), 0, 1)
+    
+    axes[0].imshow(display_rgb)
+    axes[0].set_title("dust_rgb (Full Image)")
+    axes[0].axis("off")
+    
+    axes[1].imshow(Y, vmin=0, vmax=1, cmap="gray")
+    axes[1].set_title("Ground Truth (Full Image)")
+    axes[1].axis("off")
+    
+    axes[2].imshow(pred_np, vmin=0, vmax=1, cmap="gray")
+    axes[2].set_title(f"Prediction (Epoch {epoch+1})")
+    axes[2].axis("off")
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, f"epoch_{epoch+1:02d}_full_image.png"), dpi=100)
+    plt.close()
+
 def train_model(nc_file_path, epochs=15, batch_size=8, accumulation_steps=4, lr=3e-4, device=None):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -284,20 +351,28 @@ def train_model(nc_file_path, epochs=15, batch_size=8, accumulation_steps=4, lr=
         with xr.open_dataset(nc_file_path, engine='netcdf4') as ds:
             time_dim = 'time'
             total_time_steps = len(ds[time_dim])
+            times = ds['time'].values
     except Exception as e:
         print(f"Failed to open dataset: {e}")
         return None
 
+    import pandas as pd
+    times_pd = pd.to_datetime(times)
+    # Filter to only include months with high dust percentages (Mar, Apr, May, Jun, Jul, Aug)
+    target_months = [3, 4, 5, 6, 7, 8]
+    all_indices = [i for i, t in enumerate(times_pd) if t.month in target_months]
+    
+    print(f"Reduced dataset from {total_time_steps} to {len(all_indices)} timesteps for faster training.")
+
     # Shuffle time indices to prevent seasonal bias in the splits
-    all_indices = list(range(total_time_steps))
     random.seed(42)  # For reproducibility
     random.shuffle(all_indices)
 
-    train_split_idx = int(0.8 * total_time_steps)
+    train_split_idx = int(0.8 * len(all_indices))
     train_indices = all_indices[:train_split_idx]
     val_indices = all_indices[train_split_idx:]
 
-    train_dataset = DustSCANDataset(nc_file_path, patch_size=128, time_indices=train_indices, mode='train', samples_per_time_step=20)
+    train_dataset = DustSCANDataset(nc_file_path, patch_size=128, time_indices=train_indices, mode='train', samples_per_time_step=5)
     val_dataset = DustSCANDataset(nc_file_path, patch_size=128, time_indices=val_indices, mode='val')
     
     # Accelerate data loading (tuned for Laptop CPU/RAM limits)
@@ -384,35 +459,11 @@ def train_model(nc_file_path, epochs=15, batch_size=8, accumulation_steps=4, lr=
                     writer.add_images('Masks/Ground_Truth', Y, epoch)
                     writer.add_images('Masks/Predictions', preds_bin, epoch)
                     
-                    # Save a few predicted masks to disk for visual inspection
-                    save_dir = os.path.join("visualizations", "epoch_predictions")
-                    os.makedirs(save_dir, exist_ok=True)
-                    
-                    # Save the first 3 images from this batch
-                    num_to_save = min(3, display_rgb.size(0))
-                    for i in range(num_to_save):
-                        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                        # rgb
-                        img_np = display_rgb[i].cpu().permute(1, 2, 0).numpy()
-                        axes[0].imshow(img_np)
-                        axes[0].set_title("dust_rgb")
-                        axes[0].axis("off")
-                        # gt
-                        gt_np = Y[i].cpu().squeeze().numpy()
-                        axes[1].imshow(gt_np, vmin=0, vmax=1, cmap="gray")
-                        axes[1].set_title("Ground Truth")
-                        axes[1].axis("off")
-                        # pred
-                        pred_np = preds_bin[i].cpu().squeeze().numpy()
-                        axes[2].imshow(pred_np, vmin=0, vmax=1, cmap="gray")
-                        axes[2].set_title(f"Prediction (Epoch {epoch+1})")
-                        axes[2].axis("off")
-                        
-                        plt.tight_layout()
-                        plt.savefig(os.path.join(save_dir, f"epoch_{epoch+1:02d}_sample_{i+1}.png"), dpi=100)
-                        plt.close()
-                
         val_loss /= max(1, len(val_loader))
+        
+        # Save a full image prediction instead of random crops
+        save_full_image_prediction(model, nc_file_path, val_indices, epoch, device)
+        
         # Dataset-level IoU and F1 from accumulated counts
         val_iou = total_tp / (total_tp + total_fp + total_fn + 1e-6)
         val_f1  = (2 * total_tp) / (2 * total_tp + total_fp + total_fn + 1e-6)
