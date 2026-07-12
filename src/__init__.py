@@ -1,1 +1,3 @@
-# Init file for src module
+"""
+Init file for src module.
+"""

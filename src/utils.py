@@ -1,3 +1,7 @@
+"""
+Utility module for DustSCAN project.
+Contains common variables and visualization functions.
+"""
 import os
 import numpy as np
 import torch
@@ -5,15 +9,9 @@ import torch.nn.functional as F
 import xarray as xr
 import matplotlib.pyplot as plt
 
-# =============================================================================
-# Global Normalization Statistics
-# =============================================================================
-# ImageNet stats for the pretrained encoder's first 3 channels (dust_rgb)
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)
 IMAGENET_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1)
 
-# Z-score stats for auxiliary channels (computed from DustSCAN_2022.nc)
-# NOTE: If applying to a new year or dataset, recompute these statistics!
 GLOBAL_STATS = {
     'sun_zenith_mean': 89.064937,
     'sun_zenith_std': 43.909445,
@@ -22,11 +20,13 @@ GLOBAL_STATS = {
 }
 
 def save_full_image_prediction(model, nc_file_path, val_indices, epoch, device, save_dir="outputs/visualizations/epoch_predictions"):
-    """Loads a full image from the validation set, pads it for the UNet, predicts, and saves the plot."""
+    """
+    Loads a full image from the validation set, pads it for the UNet, predicts, and saves the plot.
+    """
     os.makedirs(save_dir, exist_ok=True)
     if not val_indices:
         return
-    time_idx = val_indices[0] # Just take the first validation image
+    time_idx = val_indices[0]
     
     with xr.open_dataset(nc_file_path, engine='netcdf4') as ds:
         ds_slice = ds.isel(time=time_idx)
@@ -50,7 +50,6 @@ def save_full_image_prediction(model, nc_file_path, val_indices, epoch, device, 
     Y = (plume_id > 0).astype(np.float32)
     X_tensor = torch.nan_to_num(torch.from_numpy(X)).unsqueeze(0).to(device)
     
-    # Pad to multiple of 32
     _, _, h, w = X_tensor.shape
     pad_h = (32 - h % 32) % 32
     pad_w = (32 - w % 32) % 32
