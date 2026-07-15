@@ -21,6 +21,13 @@ if __name__ == "__main__":
 
     if len(nc_files) > 0:
         print(f"Found datasets: {nc_files}. Starting highly optimized pipeline...")
-        trained_model = train_model(nc_files, epochs=30, batch_size=32, accumulation_steps=1, lr=3e-4)
+        trained_model = train_model(
+            nc_files, 
+            epochs=30, 
+            batch_size=32, 
+            accumulation_steps=1, 
+            lr=1e-4, 
+            resume_path="outputs/models/best_dustscan_model.pth"
+        )
     else:
         print("No datasets found. Exiting.")

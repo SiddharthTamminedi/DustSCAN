@@ -2,6 +2,7 @@
 Training module for DustSCAN.
 Provides functions to train the model on the DustSCAN dataset.
 """
+import os
 import random
 import torch
 import numpy as np
@@ -22,7 +23,7 @@ def worker_init_fn(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
-def train_model(nc_file_paths, epochs=15, batch_size=8, accumulation_steps=4, lr=3e-4, device=None):
+def train_model(nc_file_paths, epochs=15, batch_size=8, accumulation_steps=4, lr=3e-4, device=None, resume_path=None):
     """
     Train the DustSCAN model.
     """
@@ -84,6 +85,10 @@ def train_model(nc_file_paths, epochs=15, batch_size=8, accumulation_steps=4, lr
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=val_num_workers, pin_memory=True, persistent_workers=True, prefetch_factor=2, worker_init_fn=worker_init_fn)
 
     model = build_advanced_unet_model().to(device)
+    if resume_path and os.path.exists(resume_path):
+        model.load_state_dict(torch.load(resume_path, map_location=device))
+        print(f"Resumed training from {resume_path}")
+        
     criterion = FocalDiceBCELoss(alpha=0.90, gamma=2.0, pos_weight=15.0)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
