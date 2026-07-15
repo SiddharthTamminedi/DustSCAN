@@ -49,11 +49,11 @@ The project utilizes multi-year NetCDF satellite datasets (e.g., `DustSCAN_2021.
 
 Each sample fed to the model is a **5-channel tensor** composed of:
 
-| Channel | Source Variable | Normalization |
-|---------|----------------|---------------|
-| 0–2 | `dust_rgb` (SEVIRI Dust RGB composite) | ImageNet mean/std |
-| 3 | `sun_zenith` (Solar Zenith Angle) | Z-score (global mean/std) |
-| 4 | `pdi` (Pink Dust Index) | Z-score (global mean/std) |
+| Channel | Source Variable                        | Normalization             |
+| ------- | -------------------------------------- | ------------------------- |
+| 0–2     | `dust_rgb` (SEVIRI Dust RGB composite) | ImageNet mean/std         |
+| 3       | `sun_zenith` (Solar Zenith Angle)      | Z-score (global mean/std) |
+| 4       | `pdi` (Pink Dust Index)                | Z-score (global mean/std) |
 
 ### Exploratory Analysis
 
@@ -118,7 +118,23 @@ python scripts/run_training.py
 
 ---
 
-## 📈 4. Evaluation & Performance Tracking
+## 🌐 4. Web Application (Streamlit)
+
+A local web interface is provided to quickly run inference on new, custom Dust RGB images downloaded from the internet or EUMETSAT viewers.
+
+```bash
+streamlit run app.py
+```
+
+**Features:**
+- **Zero-Config Inference:** Upload a standard `.png` or `.jpg` Dust RGB image; the app automatically resizes it to the expected 148x357 spatial grid.
+- **Physical PDI Reconstruction:** The app mathematically reconstructs the true Pink Dust Index (PDI) directly from the RGB pixels using the Euclidean distance from magenta (`PDI = 1 - (P_dist / MaxDist)`), identical to the original authors' physical methodology.
+- **Dynamic Context:** Use the sidebar slider to set the approximate Sun Zenith Angle to match the time of day the image was captured, ensuring accurate probability scaling.
+- **Threshold Control:** Interactively adjust the binarization threshold (default `0.5`) to tighten or loosen the strictness of the final dust mask.
+
+---
+
+## 📈 5. Evaluation & Performance Tracking
 
 ### Training Metrics
 
@@ -147,7 +163,7 @@ python scripts/test_model.py
 
 ---
 
-## 🔬 5. Ablation Study
+## 🔬 6. Ablation Study
 
 To quantify the contribution of each input feature, run the ablation study:
 
@@ -157,11 +173,11 @@ python scripts/ablation_study.py
 
 This script zeroes out individual input channels and measures the resulting drop in mean IoU relative to the full-model baseline. The analysis covers three ablation scenarios:
 
-| Scenario | Channels Zeroed | What It Tests |
-|----------|-----------------|---------------|
-| No RGB | Channels 0–2 | Importance of the SEVIRI Dust RGB composite |
-| No Sun Zenith Angle | Channel 3 | Importance of solar geometry |
-| No PDI | Channel 4 | Importance of the Pink Dust Index |
+| Scenario            | Channels Zeroed | What It Tests                               |
+| ------------------- | --------------- | ------------------------------------------- |
+| No RGB              | Channels 0–2    | Importance of the SEVIRI Dust RGB composite |
+| No Sun Zenith Angle | Channel 3       | Importance of solar geometry                |
+| No PDI              | Channel 4       | Importance of the Pink Dust Index           |
 
 Results are saved as a horizontal bar chart to `outputs/visualizations/feature_importance.png`.
 
