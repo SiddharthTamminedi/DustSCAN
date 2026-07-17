@@ -1,24 +1,22 @@
-# 🌪️ DustSCAN Training Process
+# Training Process
 
-This document provides a comprehensive overview of the training pipeline for **DustSCAN**, an advanced deep learning framework for the semantic segmentation of dust plumes.
 
----
 
-## 📊 1. Data Normalization & Preprocessing
+## 1. Data Normalization & Preprocessing
 
 To ensure stable gradients and accelerate convergence during training, all input features are normalized before being combined into a 5-channel tensor. The preprocessing steps and normalization parameters are detailed below.
 
-### 🎛️ Normalization Parameters
+### Normalization Parameters
 
-| Feature Channel | Source Variable | Normalization Method | Mean ($\mu$) | Standard Deviation ($\sigma$) |
-| :--- | :--- | :--- | :--- | :--- |
-| **0** (Red) | `dust_rgb` (R) | ImageNet Normalization | `0.485` | `0.229` |
-| **1** (Green) | `dust_rgb` (G) | ImageNet Normalization | `0.456` | `0.224` |
-| **2** (Blue) | `dust_rgb` (B) | ImageNet Normalization | `0.406` | `0.225` |
-| **3** | `sun_zenith` | Z-score Normalization | `89.064937` | `43.909445` |
-| **4** | `pdi` (Pink Dust Index) | Z-score Normalization | `0.5071591` | `0.1111518` |
+| Feature Channel | Source Variable         | Normalization Method   | Mean ($\mu$) | Standard Deviation ($\sigma$) |
+| :-------------- | :---------------------- | :--------------------- | :----------- | :---------------------------- |
+| **0** (Red)     | `dust_rgb` (R)          | ImageNet Normalization | `0.485`      | `0.229`                       |
+| **1** (Green)   | `dust_rgb` (G)          | ImageNet Normalization | `0.456`      | `0.224`                       |
+| **2** (Blue)    | `dust_rgb` (B)          | ImageNet Normalization | `0.406`      | `0.225`                       |
+| **3**           | `sun_zenith`            | Z-score Normalization  | `89.064937`  | `43.909445`                   |
+| **4**           | `pdi` (Pink Dust Index) | Z-score Normalization  | `0.5071591`  | `0.1111518`                   |
 
-### 🧮 Mathematical Formulas
+###  Mathematical Formulas
 
 #### 1. ImageNet Normalization (Channels 0–2)
 For each channel $c \in \{\text{Red, Green, Blue}\}$, the raw pixel values (scaled to $[0, 1]$) are normalized as:
@@ -28,7 +26,7 @@ $$x'_c = \frac{x_c - \mu_{ImageNet, c}}{\sigma_{ImageNet, c}}$$
 For auxiliary channels (`sun_zenith` and `pdi`), Z-score normalization is applied with a small constant $\epsilon = 10^{-8}$ to prevent division by zero:
 $$z = \frac{x - \mu}{\sigma + 10^{-8}}$$
 
-### 🔄 Multi-Channel Assembly Pipeline
+### Multi-Channel Assembly Pipeline
 
 ```mermaid
 graph TD
@@ -60,7 +58,7 @@ graph TD
 
 ---
 
-## 🧹 2. Dataset Filtering & Splitting
+## 2. Dataset Filtering & Splitting
 
 Satellite records contain many clear-sky steps and off-season intervals with no dust plumes. To prioritize meaningful events, the training pipeline performs active filtering:
 
@@ -72,16 +70,16 @@ Satellite records contain many clear-sky steps and off-season intervals with no 
 
 ---
 
-## 🌀 3. DataLoader & Data Augmentation
+## 3. DataLoader & Data Augmentation
 
 To maximize learning capacity and generalize to variations in dust shape, the training pipeline incorporates multi-threaded data loaders and dynamic spatial augmentations.
 
-### 🛡️ Real-Time Augmentation
+### Real-Time Augmentation
 During training, the following augmentations are applied on-the-fly to the normalized inputs $X$ and binary labels $Y$:
 * **Random Horizontal Flip** (50% probability)
 * **Random Vertical Flip** (50% probability)
 
-### ⚡ DataLoader Optimizations
+### DataLoader Optimizations
 * **PyTorch DataLoader** is configured with `num_workers=8` (training) and `num_workers=4` (validation).
 * **`pin_memory=True`** is enabled to speed up CPU-to-GPU data transfers.
 * **`persistent_workers=True`** and **`prefetch_factor=2`** keep the loader workers alive across epochs, preventing worker recreation overhead.
@@ -89,7 +87,7 @@ During training, the following augmentations are applied on-the-fly to the norma
 
 ---
 
-## 🧠 4. Model Architecture & Dimension Adaption
+##  4. Model Architecture & Dimension Adaption
 
 The core neural network is a **UNet++** framework designed for high-resolution semantic segmentation.
 
@@ -104,7 +102,7 @@ The core neural network is a **UNet++** framework designed for high-resolution s
 
 ---
 
-## 📉 5. Loss Function
+## 5. Loss Function
 
 Dust plumes are highly localized, covering only a tiny fraction of the satellite disk (often $< 1\%$ of the pixels). Standard binary cross-entropy (BCE) causes the network to converge to predicting clear skies. To prevent this, a custom compound **`FocalDiceBCELoss`** is used.
 
@@ -124,7 +122,7 @@ $$L_{\text{total}} = L_{\text{BCE}} + L_{\text{Focal}} + L_{\text{Dice}}$$
 
 ---
 
-## 🚀 6. Optimization & Performance Tuning
+## 6. Optimization & Performance Tuning
 
 The model is optimized using advanced hardware acceleration and optimization schedules:
 
@@ -136,15 +134,3 @@ The model is optimized using advanced hardware acceleration and optimization sch
 * **Gradient Accumulation**: Support for custom batch size simulation via `accumulation_steps` (e.g. accumulating gradients over 4 batches before stepping).
 
 ---
-
-## 📈 7. Metrics & Checkpointing
-
-* **Log Directory**: TensorBoard event logs are written to `outputs/runs/dustscan_experiment`.
-* **Tracked Metrics**:
-  * **Train Loss** (aggregated compound loss)
-  * **Validation Loss**
-  * **Validation Intersection-over-Union (IoU)**
-  * **Validation F1-Score**
-* **Visualization panels**: The pipeline logs dynamic triplets of **`[RGB Composite | Ground Truth | Prediction]`** to TensorBoard at the end of each epoch to visually track segmentation improvements.
-* **Model Checkpointing**: The model with the highest validation F1 score is saved as:
-  `outputs/models/best_dustscan_model.pth`
