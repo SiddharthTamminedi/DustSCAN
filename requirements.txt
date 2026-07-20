@@ -1,0 +1,14 @@
+torch
+segmentation-models-pytorch
+xarray
+netCDF4
+pandas
+numpy
+matplotlib
+seaborn
+tensorboard
+tqdm
+nbformat
+streamlit
+rasterio
+Pillow

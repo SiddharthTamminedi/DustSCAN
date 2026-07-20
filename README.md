@@ -18,6 +18,7 @@ DustSCAN/
 ├── src/                    # Core logic and modules
 │   ├── __init__.py         # Package initializer
 │   ├── dataset.py          # PyTorch Dataset for parsing NetCDF satellite data
+│   ├── inference.py        # Patch-wise inference for arbitrary resolution images using Gaussian blending
 │   ├── models.py           # UNet++ model architecture and custom loss functions
 │   ├── train.py            # Training loop with AMP, gradient accumulation, and checkpointing
 │   └── utils.py            # Normalization stats, constants, and visualization helpers
@@ -32,11 +33,15 @@ DustSCAN/
 │   ├── dust_analysis.ipynb          # Comprehensive multi-year EDA on dust distributions
 │   └── visualize_performance.ipynb  # TensorBoard log parsing & training metrics analysis
 │
-└── outputs/                # Generated Artifacts
-    ├── models/             # Saved PyTorch weights (.pth)
-    ├── runs/               # TensorBoard event logs
-    ├── predictions/        # Exported inference plots (RGB / GT / Pred triplets)
-    └── visualizations/     # Dataset samples and ablation study plots
+├── outputs/                # Generated Artifacts
+│   ├── models/             # Saved PyTorch weights (.pth)
+│   ├── runs/               # TensorBoard event logs
+│   ├── predictions/        # Exported inference plots (RGB / GT / Pred triplets)
+│   └── visualizations/     # Dataset samples and ablation study plots
+│
+├── app.py                  # Streamlit web application for predictions
+├── requirements.txt        # Project package dependencies
+└── train.md                # Detailed training process documentation and math formulas
 ```
 
 ---
@@ -79,7 +84,7 @@ Before training, thorough analysis of the physical characteristics of dust is co
    ```bash
    pip install -r requirements.txt
    ```
-   *(Requires: `torch`, `segmentation_models_pytorch`, `xarray`, `netCDF4`, `pandas`, `numpy`, `matplotlib`, `seaborn`, `tensorboard`, `tqdm`, `nbformat`)*
+   *(Requires: `torch`, `segmentation_models_pytorch`, `xarray`, `netCDF4`, `pandas`, `numpy`, `matplotlib`, `seaborn`, `tensorboard`, `tqdm`, `nbformat`, `streamlit`, `rasterio`, `Pillow`)*
 
 3. **Data Placement:**
    Ensure the `DustSCAN_2021.nc` and `DustSCAN_2022.nc` datasets are downloaded. By default, scripts look for these in `~/Downloads/`. Update the file paths in the scripts if stored elsewhere.
@@ -127,7 +132,12 @@ streamlit run app.py
 ```
 
 **Features:**
-- **Zero-Config Inference:** Upload a standard `.png` or `.jpg` Dust RGB image; the app automatically resizes it to the expected 148x357 spatial grid.
+- **Multi-Format Support:** Upload images in **PNG, JPG, JPEG**, or **GeoTIFF** (`.tif`, `.tiff`) format.
+- **GeoTIFF Metadata Reporting:** Automatically detects and displays geographic coordinate information (CRS and original resolution) for GeoTIFF uploads.
+- **Inference Mode Selection:** Choose between:
+  - **Resize to Standard Grid (148x357):** Rescales the input image to the standard model shape before processing.
+  - **Patch-wise Blending (Original Resolution):** Runs inference on arbitrary-sized images at their original resolution in overlapping windows, preventing edge artifacts through a 2D Gaussian blending window.
+- **Patch Overlap Control:** Adjust the overlap rate (from `0.0` to `0.9`, default `0.25`) to control blending smoothness and computational speed.
 - **Physical PDI Reconstruction:** The app mathematically reconstructs the true Pink Dust Index (PDI) directly from the RGB pixels using the Euclidean distance from magenta (`PDI = 1 - (P_dist / MaxDist)`), identical to the original authors' physical methodology.
 - **Dynamic Context:** Use the sidebar slider to set the approximate Sun Zenith Angle to match the time of day the image was captured, ensuring accurate probability scaling.
 - **Threshold Control:** Interactively adjust the binarization threshold (default `0.5`) to tighten or loosen the strictness of the final dust mask.
